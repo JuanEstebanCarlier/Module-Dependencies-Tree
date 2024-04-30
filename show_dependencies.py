@@ -13,7 +13,7 @@ def extract_dependencies(input_list):
     
     # Iterate over each string in the input list
     for item in input_list:
-        if item.strip().startswith("depends_on") or item.strip().starswith("load"):
+        if item.strip().startswith("depends_on") or item.strip().startswith("load"):
             # Find the starting and ending position of the argument(s) inside depends_on()
             start = item.find('(') + 1
             end = item.rfind(')')
