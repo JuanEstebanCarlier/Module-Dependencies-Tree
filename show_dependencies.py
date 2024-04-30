@@ -3,9 +3,10 @@ import subprocess
 import pydot
 import re
 
-#TODO regex function from list of strings (input lines) to list of dependencies (ideally for both module spider and module avail)
+#TODO regex function from list of strings (input lines) to list of dependencies (for module spider)
+'''
 def get_dependencies_list():
-    print()
+'''
 
 def extract_dependencies(input_list):
     output_list = []
@@ -28,49 +29,16 @@ def extract_dependencies(input_list):
     
     return output_list
 
-def get_active_module_list():
+# Run a specific command for module and return the list of modules
+def get_module_list(method):
     try:
-        result = subprocess.run('module tablelist', shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
+        result = subprocess.run('module --terse ' + method, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
     except subprocess.CalledProcessError as e:
-        print(f"Error executing 'module show {module_name}': {e}")
+        print(f"Error executing 'module {method}': {e}")
 
-    tablelist_pattern = r'\["(.*?)"\] = "(.*?)"'
+    return result.stdout.split()
 
-    # Find all matches of the pattern and turn them into a list
-    matches = re.findall(tablelist_pattern, result.stdout)
-    active_module_list = [key+'/'+value for key, value in matches]
-
-    return active_module_list 
-
-def get_avail_module_list():
-    try:
-        result = subprocess.run('module avail', shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
-    except subprocess.CalledProcessError as e:
-        print(f"Error executing 'module show {module_name}': {e}")
-
-    avail_module_list = []
-    lines = result.stdout.split()
-    for potential in lines:
-        if ((potential.count("/") == 1) or potential.startswith("quartus")) and (not potential.startswith("foo")):
-            avail_module_list.append(potential)
-    return avail_module_list
-
-# TODO try using module spider
-'''
-def get_full_modules_list():
-    try:
-        result = subprocess.run('module spider', shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
-    except subprocess.CalledProcessError as e:
-        print(f"Error executing 'module show {module_name}': {e}")
-
-    full_modules = []
-    lines = result.stdout.split()
-    for potential in lines:
-        if ((potential.count("/") == 1) or potential.startswith("quartus")) and (not potential.startswith("foo")):
-            full_modules.append(potential)
-    return full_modules
-'''
-
+# display the dependencies of each module that was looked into
 def print_module_dependencies(module_name, dependencies):
     if len(dependencies)>0:
         print(module_name, "depends on:")
@@ -78,15 +46,18 @@ def print_module_dependencies(module_name, dependencies):
             print(f"- {dep}")
     else:
         print(module_name, "has no dependencies")
+    print()
+
+### GRAPH A SINGLE MODULE
 
 def graph_module_dependencies(module_name, graph = None, recursive = True):
     # Create graph object from pydot library
     if graph == None:
-        graph = pydot.Dot("dependency_tree"+ " " + module_name, graph_type="graph", bgcolor="white")
+        graph = pydot.Dot("dependency_tree " + module_name, graph_type="graph", bgcolor="white")
 
     # Execute the module show command
     try:
-        result = subprocess.run('module show' + " " + module_name, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
+        result = subprocess.run('module show ' + module_name, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
     except subprocess.CalledProcessError as e:
         print(f"Error executing 'module show {module_name}': {e}")
         return
@@ -95,8 +66,13 @@ def graph_module_dependencies(module_name, graph = None, recursive = True):
     lines = result.stdout.split("\n")
     dependencies = extract_dependencies(lines)
 
+    # Add module to parsed_modules set
+    parsed_modules.add(module_name)
+
     # Call print function to print dependencies list
-    print_module_dependencies(module_name, dependencies)
+    if show_parsing: print_module_dependencies(module_name, dependencies)
+
+    if include_independent: graph.add_node(pydot.Node(module_name, shape="circle"))
 
     if len(dependencies) > 0:
         # Create node for the current module
@@ -106,63 +82,78 @@ def graph_module_dependencies(module_name, graph = None, recursive = True):
             graph.add_node(pydot.Node(dep, shape="circle"))
             graph.add_edge(pydot.Edge(dep, module_name, color="black", dir="forward"))
             # Recursive Step: For each dependency call the function again
-            if recursive:
-                graph_module_dependencies(dep, graph, True)
+            if recursive and dep not in parsed_modules: graph_module_dependencies(dep, graph, True)
     return graph    
 
-def graph_module_available():
+### GRAPH A SET OF MODULES
+
+def graph_modules(method):
     # Create graph object from pydot library
-    graph = pydot.Dot("dependency_tree_avail", graph_type="graph", bgcolor="white")
-    available_list_modules = get_avail_module_list()
-    for mod in available_list_modules:
+    graph = pydot.Dot("dependency_tree_" + method, graph_type="graph", bgcolor="white")
+    modules_list = get_module_list(method)
+    for mod in modules_list:
         graph = graph_module_dependencies(mod, graph, False)
     return graph
 
-def graph_module_active():
-    # Create graph object from pydot library
-    graph = pydot.Dot("dependency_tree_active", graph_type="graph", bgcolor="white")
-    available_list_modules = get_active_module_list()
-    for mod in available_list_modules:
-        graph = graph_module_dependencies(mod, graph, False)
-    return graph
-
-def graph_module_all():
-    # Create graph object from pydot library
-    graph = pydot.Dot("dependency_tree_all", graph_type="graph", bgcolor="white")
-    full_modules_list = get_full_modules_list()
-    for mod in full_list_modules:
-        graph = graph_module_dependencies(mod, graph, False)
-    return graph   
+### MAIN
 
 def main():
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description='List dependencies of a module in an HPCC environment.')
-    parser.add_argument('module_name', type=str, nargs='?', default='active', help='Name of the module to show dependencies for. If not provided, will default to active modules.')
-    parser.add_argument('image_format', type=str, nargs='?', default='.svg', help='Type of output file for creating the graph. If not provided, will default to .svg.')
+    global show_parsing
+    global include_independent
+    global parsed_modules
+    parsed_modules = set()
+
+    lmod_commands = ["list", "avail", "spider"]
     
-    # Parse and store the arguments provided in the command line
+    parser = argparse.ArgumentParser(
+    description='List dependencies of a module in an HPCC environment.',
+    epilog='''
+    Examples:
+    %(prog)s                              # Lists dependencies of all modules in default format.
+    %(prog)s exampleModule -o png         # Outputs the dependencies of 'exampleModule' in PNG format.
+    %(prog)s -p -i                        # Prints parsing details and includes modules without dependencies.
+    '''
+    )
+    parser.add_argument('module_name', type=str, nargs='?', default=None,
+                    help='Name of the module to show dependencies for. Defaults to None.')
+    parser.add_argument('-c', '--command', type=str, nargs='?', default='list',
+                    help='Use a lmod command to graph (list, avail, spider). Default is list. Example: -c avail')
+    parser.add_argument('-o', '--output', type=str, nargs='?', default='raw',
+                    help='Specify the output file format for the dependency graph (supported: raw, dot, png, svg). Default is raw dot format. Example: -o png')
+    parser.add_argument('-p', '--print', action='store_true',
+                    help='If set, print detailed parsing information of module dependencies.')
+    parser.add_argument('-i', '--include', action='store_true',
+                    help='If set, include modules without dependencies in the output.')
+
+    # Capture the arguments provided in the command line into variables
     args = parser.parse_args()
-    module_name = args.module_name
-    image_format = args.image_format
+    module_name =           args.module_name
+    command =               args.command
+    output_format =         args.output
+    show_parsing =          args.print
+    include_independent =   args.include
     
-    # Call dependencies function according to the command line argument chosen
-    if module_name == "active":
-        graph = graph_module_active()
-    elif module_name == "available":
-        graph = graph_module_available()
-    elif module_name == "all":
-        graph = graph_module_all()
-    # Specific module was selected
+    # Call dependencies function according to the command line argument given
+    if module_name == None:
+        graph = graph_modules(command)
+        # To give a name to the output file
+        module_name = command
+    # Otherwise, a module was selected
     else:
-        graph = graph_module_dependencies(module_name)
-        # Make it possible to create a file with its name
+        graph = graph_module_dependencies(module_name, None, True)
+        # Change format of module name to create an output file with its name
         module_name = module_name.replace("/","-")
 
     # Draw the graph with the respective format chosen 
-    if image_format == ".png": 
-        graph.write_png(module_name + "_module_dependencies" + image_format)
-    elif image_format == ".svg":
-        graph.write_svg(module_name + "_module_dependencies" + image_format)
+    if output_format == "png": 
+        graph.write_png(module_name + "_module_dependencies." + output_format)
+    elif output_format == "svg":
+        graph.write_svg(module_name + "_module_dependencies." + output_format)
+    elif output_format == "dot":
+        graph.write_dot(module_name + "_module_dependencies." + output_format)
+    elif output_format ==  "raw":
+        print(graph.to_string())
         
 
 if __name__ == "__main__":
