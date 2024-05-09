@@ -1,0 +1,38 @@
+[build-system]
+requires      = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mod_dt"
+version = "0.1.0"
+description = "A tool to list dependencies of modules in an HPCC environment based off Lmod"
+readme = "README.md"
+authors = [
+    { name = "Juan Carlier", email = "carlier1@msu.edu" },
+    { name = "Dirk Colbry", email = "colbrydi@msu.edu" }
+]
+license = { file = "LICENSE" }
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Build Tools",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10"
+]
+keywords = ["module", "dependency", "tree"]
+dependencies = [
+    "pydot >= 1.4.2",
+]
+requires-python = ">=3.7"
+
+[project.urls]
+repository = "https://github.com/JuanEstebanCarlier/Module-Dependencies-Tree"
+
+[project.scripts]
+mod-dt = "mod_dt.module_dt:main"
+
+

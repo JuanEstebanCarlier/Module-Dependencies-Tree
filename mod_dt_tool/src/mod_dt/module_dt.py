@@ -41,8 +41,7 @@ def extract_dependencies(input_list):
     # Iterate over each string in the input list
     for item in input_list:
         start = item.find('(')
-
-        if item[:start] in depend_prefix:
+        if (item[:start] in depend_prefix) and (start != -1):
             # Find the starting and ending position of the argument(s) inside depends_on()
             start = item.find('(') + 1
             end = item.rfind(')')
@@ -60,8 +59,9 @@ def extract_dependencies(input_list):
 
 def get_dependencies_list(module_name):
     # Execute the module show command
+    command = f"bash -c 'module --raw show {module_name}'"
     try:
-        result = subprocess.run(f"module --raw show {module_name}", shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
+        result = subprocess.run(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
     except subprocess.CalledProcessError as e:
         print(f"Error executing 'module --raw show {module_name}': {e}")
         return []
@@ -75,8 +75,9 @@ def get_dependencies_list(module_name):
 
 # Run a specific command for module and return the list of modules
 def get_module_list(method):
+    command = f"bash -c 'module --terse {method}'"
     try:
-        result = subprocess.run(f"module --terse {method}", shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
+        result = subprocess.run(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
     except subprocess.CalledProcessError as e:
         print(f"Error executing 'module --terse {method}': {e}")
     return result.stdout.split()
@@ -96,7 +97,7 @@ def print_module_dependencies(module_name, dependencies):
 def graph_module_dependencies(graph_config, parsed_modules, graph = None):
     # Create graph object from pydot library
     if graph == None:
-        graph = pydot.Dot("dependency_tree {graph_config.module_name}", graph_type="graph", bgcolor="white")
+        graph = pydot.Dot(f'dependency_tree {graph_config.module_name}', graph_type="graph", bgcolor="white")
 
     dependencies = get_dependencies_list(graph_config.module_name)
 
@@ -124,7 +125,7 @@ def graph_module_dependencies(graph_config, parsed_modules, graph = None):
 
 def graph_modules(graph_config, parsed_modules):
     # Create graph object from pydot library
-    graph = pydot.Dot("dependency_tree_{graph_config.command}", graph_type="graph", bgcolor="white")
+    graph = pydot.Dot(f'dependency_tree_{graph_config.command}', graph_type="graph", bgcolor="white")
     modules_list = get_module_list(graph_config.command)
     for mod in modules_list:
         graph_config.module_name = mod
@@ -147,7 +148,7 @@ def draw_graph(graph_config, parsed_modules):
     valid_formats = ["png", "svg", "dot", "raw"]
     period = graph_config.output_file.find(".")
     output_format = graph_config.output_file[period+1:]
-    if output_format not in valid_formats or period == -1:
+    if (output_format not in valid_formats) or (period == -1):
         print("Output file format not valid. Default to raw")
         output_format = "raw"
 
@@ -159,3 +160,26 @@ def draw_graph(graph_config, parsed_modules):
         graph.write_dot(graph_config.output_file)
     elif output_format ==  "raw":
         print(graph.to_string())
+
+def main():
+    # Set to keep track of modules already parsed
+    parsed_modules = set()
+
+    # Parse command line arguments
+    parser = parse_command_line()
+
+    # Capture the arguments provided in the command line into the Graph Config object
+    args = parser.parse_args()
+    graph_config = GraphConfig(
+    module_name         =   args.module_name,
+    command             =   args.command,
+    output_file         =   args.output,
+    show_parsing        =   args.print,
+    include_independent =   args.include,
+    )
+    
+    draw_graph(graph_config, parsed_modules)
+    
+
+if __name__ == "__main__":
+    main()
